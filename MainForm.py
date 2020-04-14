@@ -33,7 +33,6 @@ class MainForm:
         if self.competitors:
             df = pd.DataFrame(pd.read_sql(f"""select cs.НоменклатураКод, 
             (1 + c.Экспедирование * c.Экспедирование_W) Экспедирование,
-            cs.НовинкаС,
             (1 + cs.НовинкаНаценка) НовинкаНаценка,
             (1 + s.БрендНаценка) БрендНаценка,
             (1 + p.Рентабельность) Рентабельность
@@ -41,7 +40,8 @@ class MainForm:
             join Clients c on c.КонтрагентКод=cs.КонтрагентКод
             join SKU s on s.НоменклатураКод=cs.НоменклатураКод
             left join Profitability p on p.НоменклатураКод = cs.НоменклатураКод
-            where cs.КонтрагентКод={self.client} and
+            where 
+            cs. Статус=1 and cs.КонтрагентКод={self.client} and
             cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])} and
             p.Год=year('{self.start}') and
             p.Месяц=month('{self.start}')
@@ -59,13 +59,13 @@ class MainForm:
             cs.МаксимальнаяЦенаПродажи РекомендованнаяЦена
             from ClientSKU cs 
             where cs.КонтрагентКод={self.client} and
-            cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])})
+            cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}
             """, con=engine_to))
             res = sku_df.merge(df)
         res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'].round(2)
         return res[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']]
     
     
-mf = MainForm(5527, 1, '2020-04-14', '2020-04-26')
+mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=False)
 skus = mf.get_sku_list()
 result = mf.get_recommended_prices(skus)
