@@ -97,4 +97,4 @@ if __name__ == '__main__':
     mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=True, pickup=True)
     skus = mf.get_sku_list()
     result, df = mf.get_recommended_prices(skus)
-    dopobjem(14392, 560, df)
+    get_sku(14392, df)
