@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import pandas as pd
 import numpy as np
 import sqlalchemy
@@ -17,22 +18,21 @@ class MainForm:
         
         
     def get_sku_list(self):
-    # С учетной ценой
-        df = pd.DataFrame(pd.read_sql(f"""select convert(int, s.НоменклатураКод) НоменклатураКод, 
+        # С учетной ценой
+        df = pd.read_sql(f"""select convert(int, s.НоменклатураКод) НоменклатураКод, 
         s.Номенклатура,
         round(avg(pc.Цена), 2) УчетнаяЦена,
         round(avg(pc.ЦенаЗаКГ), 2) УчетнаяЦенаКГ
         from PrimeCosts pc 
         join SKU s on s.НоменклатураКод=pc.НоменклатураКод
         where pc.Период between '{self.start}' and '{self.finish}'
-        group by s.НоменклатураКод, s.Номенклатура""", con=engine_to))
-        
+        group by s.НоменклатураКод, s.Номенклатура""", con=engine_to)
         return df
     
     
     def get_recommended_prices(self, sku_df):
         cs_filter = f"""cs. Статус=1 and cs.КонтрагентКод={self.client} and
-            cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}"""
+        cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}"""
         if self.competitors:
             df = pd.DataFrame(pd.read_sql(f"""select cs.НоменклатураКод, 
             (1 + c.Экспедирование * c.Экспедирование_W) Экспедирование,
@@ -89,11 +89,11 @@ class MainForm:
 # P_уч=текущая  учетная цена на 1 кг для данной ценовой группы
 
 # main_df - датафрейм с расчетными показателями (получаемый get_recommended_prices)
-def dopobjem(sku, objem, main_df=df):
+def dopobjem(sku, objem, main_df):
     df = pd.read_sql(f"""select * 
-            from ClientSKU cs 
-            where НоменклатураКод = {sku}
-            and Статус=1""", engine_to)
+    from ClientSKU cs 
+    where НоменклатураКод = {sku}
+    and Статус=1""", engine_to)
     main_df['СредняяЦенаКГ'] = main_df['НедельнаяСуммаПродаж']/main_df['НедельныйОбъемПродаж']
     res = main_df[main_df['НоменклатураКод']==sku]
     if 1.4*df['НедельныйОбъемПродаж'].values[0] < objem:
@@ -111,8 +111,8 @@ def dopobjem(sku, objem, main_df=df):
     res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'] * res['Экспедирование']
     return res['РекомендованнаяЦена'].values[0]
      
-if _name_ == '_main_':
+if __name__ == '__main__':
     mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=False)
     skus = mf.get_sku_list()
     result, df = mf.get_recommended_prices(skus)
-    dopobjem(14392, 560)
+    dopobjem(14392, 560, df)
