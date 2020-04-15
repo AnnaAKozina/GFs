@@ -59,20 +59,25 @@ class MainForm:
             res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'] * res['Экспедирование']
         else:
             df = pd.DataFrame(pd.read_sql(f"""select cs.НоменклатураКод, 
-            cs.МаксимальнаяЦенаПродажиКГ*s.ЕдиницаХраненияОстатковВес РекомендованнаяЦена,            
+            cs.МаксимальнаяЦенаПродажиКГ*s.ЕдиницаХраненияОстатковВес РекомендованнаяЦена,
+            (1 + c.Экспедирование * c.Экспедирование_W) Экспедирование,
             (1 + cs.НовинкаНаценка) НовинкаНаценка,
+            (1 + s.БрендНаценка) БрендНаценка,
+            (1 + p.Рентабельность) Рентабельность,
             НедельнаяСуммаПродаж, НедельныйОбъемПродаж
-            from ClientSKU cs join SKU s on s.НоменклатураКод=cs.НоменклатураКод
-            where {cs_filter}
+            from ClientSKU cs 
+            join Clients c on c.КонтрагентКод=cs.КонтрагентКод
+            left join SKU s on s.НоменклатураКод=cs.НоменклатураКод
+            left join Profitability p on p.НоменклатураКод = cs.НоменклатураКод  and
+            p.Год=year('{self.start}') and
+            p.Месяц=month('{self.start}')
+            where 
+            {cs_filter}
             """, con=engine_to))
             res = sku_df.merge(df)
         res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'].round(2)
         return res[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']], res
     
-    
-mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=True)
-skus = mf.get_sku_list()
-result, df = mf.get_recommended_prices(skus)
 
 
 #Скидка за дополнительный объем. Если допобъем больше 40% от среднего недельного, то скидка составляет 
@@ -87,12 +92,12 @@ result, df = mf.get_recommended_prices(skus)
 def dopobjem(sku, objem, main_df=df):
     df = pd.read_sql(f"""select * 
             from ClientSKU cs 
-            where НоменклатураКод = {sku} and 
-            КонтрагентКод = {client}
+            where НоменклатураКод = {sku}
             and Статус=1""", engine_to)
+    main_df['СредняяЦенаКГ'] = main_df['НедельнаяСуммаПродаж']/main_df['НедельныйОбъемПродаж']
     res = main_df[main_df['НоменклатураКод']==sku]
-    if 1.4*df['НедельныйОбъемПродаж'].values < objem:
-        main_df['СредняяЦенаКГ'] = main_df['НедельнаяСуммаПродаж']/main_df['НедельныйОбъемПродаж']
+    if 1.4*df['НедельныйОбъемПродаж'].values[0] < objem:
+        
         #v2=objem
         (p_uch, p1, p2, v1) = res[['УчетнаяЦенаКГ', 'СредняяЦенаКГ', 'РекомендованнаяЦена', 'НедельныйОбъемПродаж']].values[0]
         skidka = (p1 - p_uch) * (v1 + objem) * 0.5 / p1 / objem + p_uch/p1 + 1
@@ -105,5 +110,9 @@ def dopobjem(sku, objem, main_df=df):
     #Вторая группа наценок - применяются к Новой Цене (после фиксированной наценки за HeatSeal и суперпереборку)
     res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'] * res['Экспедирование']
     return res['РекомендованнаяЦена'].values[0]
-        
-dopobjem(14392, 5527, 560)
+     
+if _name_ == '_main_':
+    mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=False)
+    skus = mf.get_sku_list()
+    result, df = mf.get_recommended_prices(skus)
+    dopobjem(14392, 560)
