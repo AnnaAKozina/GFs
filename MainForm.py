@@ -22,6 +22,7 @@ def calculate_price(df, competitors=True, deficit=False, pickup=False, trades_ty
         dopobjem = dopobjem * df['ЕдиницаХраненияОстатковВес'].values[0]
     
         if dopobjem:
+            df['СредняяЦенаКГ'] = df['НедельнаяСуммаПродаж']/df['НедельныйОбъемПродаж']
             if 1.4*df['НедельныйОбъемПродаж'].values[0] < dopobjem:
                 (p_uch, p1, p2, v1) = df[['УчетнаяЦенаКГ', 'СредняяЦенаКГ', 'РекомендованнаяЦена', 'НедельныйОбъемПродаж']].values[0]
                 skidka_dopobjem = (p1 - p_uch) * (v1 + dopobjem) * 0.5 / p1 / dopobjem + p_uch/p1 + 1
