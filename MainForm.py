@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 engine_to = sqlalchemy.create_engine("mssql+pymssql://gleb-pwc:changeme@srv-ax-test/pwc")
 
-def calculate_price(df, competitors=True, deficit=False, pickup=False, trades_type=1, **kwargs):
+def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trades_type=1, **kwargs):
     dopobjem = kwargs.get('dopobjem')
     artfruit = kwargs.get('artfruit') 
     heatseal = kwargs.get('heatseal')
@@ -17,6 +17,7 @@ def calculate_price(df, competitors=True, deficit=False, pickup=False, trades_ty
     
     skidka_dopobjem = 0
     
+    # Если передано скю, значит расчет для единичного скю
     if sku:
         df = df[df['НоменклатураКод']==sku]
         dopobjem = dopobjem * df['ЕдиницаХраненияОстатковВес'].values[0]
@@ -27,7 +28,7 @@ def calculate_price(df, competitors=True, deficit=False, pickup=False, trades_ty
                 (p_uch, p1, p2, v1) = df[['УчетнаяЦенаКГ', 'СредняяЦенаКГ', 'РекомендованнаяЦена', 'НедельныйОбъемПродаж']].values[0]
                 skidka_dopobjem = (p1 - p_uch) * (v1 + dopobjem) * 0.5 / p1 / dopobjem + p_uch/p1 + 1
             
-    if competitors:
+    if not no_competitors:
         #Пока что заполним пропуски нулями, надо убрать, когда будут полные данные от ГФ
         df[['ЗатратыЛогистика', 'ЗатратыСклад']] = df[['ЗатратыЛогистика', 'ЗатратыСклад']].fillna(0)
 
@@ -92,17 +93,17 @@ class MainForm:
     
     
     
-    def get_recommended_prices(self, competitors=True, deficit=False, pickup=False, trades_type=1):
-        self.competitors = competitors
+    def get_recommended_prices(self, no_competitors=False, deficit=False, pickup=False, trades_type=1):
+        self.no_competitors = no_competitors
         self.deficit = deficit
         self.pickup = pickup
         self.trades_type = trades_type
-        self.df = calculate_price(self.df, competitors, deficit, pickup, trades_type)
+        self.df = calculate_price(self.df, no_competitors, deficit, pickup, trades_type)
         return self.df[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']], self.df
     
     
     def get_recommended_price(self, sku, dopobjem=0, artfruit=False, heatseal=False, superpereborka=False):
-        return calculate_price(self.df, self.competitors, self.deficit, self.pickup, self.trades_type, 
+        return calculate_price(self.df, self.no_competitors, self.deficit, self.pickup, self.trades_type, 
                                sku=sku, dopobjem=dopobjem, artfruit=artfruit, 
                                heatseal=heatseal, superpereborka=superpereborka)[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']]
     
@@ -110,5 +111,5 @@ class MainForm:
 if __name__ == '__main__':
     mf = MainForm(5527, '2020-04-14', '2020-04-26')
     mf.get_data()
-    result, df = mf.get_recommended_prices(competitors=True, pickup=True)
-    mf.get_recommended_price(224, dopobjem=60)
+    result, df = mf.get_recommended_prices(no_competitors=False, pickup=True)
+    mf.get_recommended_price(524, dopobjem=600)
