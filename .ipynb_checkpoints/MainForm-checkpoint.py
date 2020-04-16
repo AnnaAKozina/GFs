@@ -3,23 +3,60 @@ import pandas as pd
 import numpy as np
 import sqlalchemy
 from datetime import date, datetime, timedelta
+import warnings
+warnings.filterwarnings("ignore")
 
 engine_to = sqlalchemy.create_engine("mssql+pymssql://gleb-pwc:changeme@srv-ax-test/pwc")
 
+def calculate_price(df, competitors=True, deficit=False, pickup=False, trades_type=1, **kwargs):
+    dopobjem = kwargs.get('dopobjem')
+    artfruit = kwargs.get('artfruit') 
+    heatseal = kwargs.get('heatseal')
+    superpereborka = kwargs.get('superpereborka')
+    sku = kwargs.get('sku')
+    
+    skidka_dopobjem = 0
+    
+    if sku:
+        df = df[df['НоменклатураКод']==sku]
+        dopobjem = dopobjem * df['ЕдиницаХраненияОстатковВес'].values[0]
+    
+        if dopobjem:
+            if 1.4*df['НедельныйОбъемПродаж'].values[0] < dopobjem:
+                (p_uch, p1, p2, v1) = df[['УчетнаяЦенаКГ', 'СредняяЦенаКГ', 'РекомендованнаяЦена', 'НедельныйОбъемПродаж']].values[0]
+                skidka_dopobjem = (p1 - p_uch) * (v1 + dopobjem) * 0.5 / p1 / dopobjem + p_uch/p1 + 1
+            
+    if competitors:
+        #Пока что заполним пропуски нулями, надо убрать, когда будут полные данные от ГФ
+        df[['ЗатратыЛогистика', 'ЗатратыСклад']] = df[['ЗатратыЛогистика', 'ЗатратыСклад']].fillna(0)
+
+        #Первая группа наценок
+        df['РекомендованнаяЦена'] = df['УчетнаяЦена'] * df['БрендНаценка'] * df['Рентабельность'] * (1 - skidka_dopobjem/100)
+
+        #Добавление фикса за логистику и упаковку
+        df['РекомендованнаяЦена'] += df['ЗатратыСклад']
+        if not pickup:
+            df['РекомендованнаяЦена'] += df['ЗатратыЛогистика']
+
+        #Вторая группа наценок - применяются к Новой Цене (после фиксированной наценки за логистику и упаковку)
+        df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['Экспедирование']
+    else:
+        df['РекомендованнаяЦена'] = df['РекомендованнаяЦена_']
+
+    df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'].round(2)
+    return df
+
+
 class MainForm:
-    def __init__(self, client, trades_type, start, finish, competitors=True, deficit=False, pickup=False):
+    def __init__(self, client, start, finish):
         self.client = client
-        self.trades_type = trades_type
         self.start = start
         self.finish = finish
-        self.competitors = competitors
-        self.deficit = deficit
-        self.pickup = pickup
+        self.df = pd.DataFrame()
         
-        
-    def get_sku_list(self):
+    def get_data(self):
         # С учетной ценой
-        df = pd.read_sql(f"""select convert(int, s.НоменклатураКод) НоменклатураКод, 
+        sku_df = pd.read_sql(f"""select convert(int, s.НоменклатураКод) НоменклатураКод, 
         s.Номенклатура,
         round(avg(pc.Цена), 2) УчетнаяЦена,
         round(avg(pc.ЦенаЗаКГ), 2) УчетнаяЦенаКГ
@@ -27,14 +64,11 @@ class MainForm:
         join SKU s on s.НоменклатураКод=pc.НоменклатураКод
         where pc.Период between '{self.start}' and '{self.finish}'
         group by s.НоменклатураКод, s.Номенклатура""", con=engine_to)
-        return df
-    
-    
-    def get_recommended_prices(self, sku_df):
+        
         cs_filter = f"""cs. Статус=1 and cs.КонтрагентКод={self.client} and
         cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}"""
         
-        df = pd.DataFrame(pd.read_sql(f"""select 
+        self.df = pd.read_sql(f"""select 
         cs.НоменклатураКод, 
         cs.МаксимальнаяЦенаПродажиКГ*s.ЕдиницаХраненияОстатковВес РекомендованнаяЦена_, --без конкурентов
         (1 + c.Экспедирование * c.Экспедирование_W) Экспедирование,
@@ -43,6 +77,7 @@ class MainForm:
         (1 + p.Рентабельность) Рентабельность,
         НедельнаяСуммаПродаж, НедельныйОбъемПродаж,
         c.[ЗатратыЛогистика, руб/кг] * s.ЕдиницаХраненияОстатковВес ЗатратыЛогистика,
+        s.ЕдиницаХраненияОстатковВес,
         s.ЗатратыСклад
         from ClientSKU cs 
         join Clients c on c.КонтрагентКод=cs.КонтрагентКод
@@ -52,49 +87,27 @@ class MainForm:
         p.Месяц=month('{self.start}')
         where 
         {cs_filter}
-        """, con=engine_to))
-        res = sku_df.merge(df)
-        
-        if self.competitors:
-            #Пока что заполним пропуски нулями, надо убрать, когда будут полные данные от ГФ
-            res[['ЗатратыЛогистика', 'ЗатратыСклад']] = res[['ЗатратыЛогистика', 'ЗатратыСклад']].fillna(0)
-            
-            #Первая группа наценок
-            res['РекомендованнаяЦена'] = res['УчетнаяЦена'] * res['БрендНаценка'] * res['Рентабельность']
-            
-            #Добавление фикса за логистику и упаковку
-            res['РекомендованнаяЦена'] += res['ЗатратыСклад']
-            if not self.pickup:
-                res['РекомендованнаяЦена'] += res['ЗатратыЛогистика']
-            
-            #Вторая группа наценок - применяются к Новой Цене (после фиксированной наценки за логистику и упаковку)
-            res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'] * res['Экспедирование']
-        else:
-            res['РекомендованнаяЦена'] = res['РекомендованнаяЦена_']
-            
-        res['РекомендованнаяЦена'] = res['РекомендованнаяЦена'].round(2)
-        return res[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']], res
+        """, con=engine_to).merge(sku_df)
     
-
     
-
-
-#Скидка за дополнительный объем. Если допобъем больше 40% от среднего недельного, то скидка составляет 
-#(P_2-P_1)/P_1   =((P_1-P_уч )* 〖(V〗_1+V_2)*0,5)/〖P_1 V〗_2 +  P_уч/P_1 -1 
-# V_1=средний недельный объем торгов за последние 4 недели
-# V_2=новый недельный объем торгов 
-# P_1=средняя цена продажи за 1 кг за последние 4 недели
-# P_2=новая цена продажи 
-# P_уч=текущая  учетная цена на 1 кг для данной ценовой группы
-
-# main_df - датафрейм с расчетными показателями (получаемый get_recommended_prices)
-def get_sku(sku, main_df, objem=0, artfruit=False, heatseal=False, superpereborka=False):
-    #тут будет такой же расчет рекцены, как и в главном классе, но для одной строки
-    #с учетом тумблеров по товару
-    pass
+    
+    def get_recommended_prices(self, competitors=True, deficit=False, pickup=False, trades_type=1):
+        self.competitors = competitors
+        self.deficit = deficit
+        self.pickup = pickup
+        self.trades_type = trades_type
+        self.df = calculate_price(self.df, competitors, deficit, pickup, trades_type)
+        return self.df[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']], self.df
+    
+    
+    def get_recommended_price(self, sku, dopobjem=0, artfruit=False, heatseal=False, superpereborka=False):
+        return calculate_price(self.df, self.competitors, self.deficit, self.pickup, self.trades_type, 
+                               sku=sku, dopobjem=dopobjem, artfruit=artfruit, 
+                               heatseal=heatseal, superpereborka=superpereborka)[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']]
+    
      
 if __name__ == '__main__':
-    mf = MainForm(5527, 1, '2020-04-14', '2020-04-26', competitors=True, pickup=True)
-    skus = mf.get_sku_list()
-    result, df = mf.get_recommended_prices(skus)
-    get_sku(14392, df)
+    mf = MainForm(5527, '2020-04-14', '2020-04-26')
+    mf.get_data()
+    result, df = mf.get_recommended_prices(competitors=True, pickup=True)
+    mf.get_recommended_price(224, dopobjem=60)
