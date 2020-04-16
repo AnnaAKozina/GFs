@@ -17,7 +17,6 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
     
     skidka_dopobjem = 0
     
-    # Если передано скю, значит расчет для единичного скю
     if sku:
         df = df[df['НоменклатураКод']==sku]
         dopobjem = dopobjem * df['ЕдиницаХраненияОстатковВес'].values[0]
@@ -29,9 +28,6 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
                 skidka_dopobjem = (p1 - p_uch) * (v1 + dopobjem) * 0.5 / p1 / dopobjem + p_uch/p1 + 1
             
     if not no_competitors:
-        #Пока что заполним пропуски нулями, надо убрать, когда будут полные данные от ГФ
-        df[['ЗатратыЛогистика', 'ЗатратыСклад']] = df[['ЗатратыЛогистика', 'ЗатратыСклад']].fillna(0)
-
         #Первая группа наценок
         df['РекомендованнаяЦена'] = df['УчетнаяЦена'] * df['БрендНаценка'] * df['Рентабельность'] * (1 - skidka_dopobjem/100)
 
@@ -90,6 +86,8 @@ class MainForm:
         where 
         {cs_filter}
         """, con=engine_to).merge(sku_df)
+        #Пока что заполним пропуски нулями, надо убрать, когда будут полные данные от ГФ
+        self.df[['ЗатратыЛогистика', 'ЗатратыСклад']] = self.df[['ЗатратыЛогистика', 'ЗатратыСклад']].fillna(0)
     
     
     
