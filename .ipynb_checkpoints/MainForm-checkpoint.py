@@ -21,6 +21,8 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
     toohigh = kwargs.get('toohigh')
     toolowvalue = kwargs.get('toolowvalue')
     toohighvalue = kwargs.get('toohighvalue')
+    novinka = kwargs.get('novinka')
+    start = kwargs.get('start')
     
     skidka_dopobjem = 0
     
@@ -45,6 +47,8 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
         if toohigh:
             df['ИзменениеЦены'] = toohighvalue
             
+        
+            
     if not no_competitors:
         #Первая группа наценок
         df['РекомендованнаяЦена'] = df['УчетнаяЦена'] * df['БрендНаценка'] * df['Рентабельность'] * (1 - skidka_dopobjem/100)
@@ -53,6 +57,11 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
         df['РекомендованнаяЦена'] += df['ЗатратыСклад']
         if not pickup:
             df['РекомендованнаяЦена'] += df['ЗатратыЛогистика']
+        
+        #Новинка
+        if novinka:
+            if df['НовинкаС'].iloc[0] <= pd.to_datetime(start):
+                df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['НовинкаНаценка']
 
         #Вторая группа наценок - применяются к Новой Цене (после фиксированной наценки за логистику и упаковку)
         df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['Экспедирование']
@@ -121,6 +130,7 @@ and [Описание_состояния_стока_ГФ]='Оверсток от
         cs.МаксимальнаяЦенаПродажиКГ*s.ЕдиницаХраненияОстатковВес РекомендованнаяЦена_, --без конкурентов
         (1 + c.Экспедирование * c.Экспедирование_W) Экспедирование,
         (1 + cs.НовинкаНаценка) НовинкаНаценка,
+        cs.НовинкаС,
         (1 + s.БрендНаценка) БрендНаценка,
         (1 + p.Рентабельность) Рентабельность,
         НедельнаяСуммаПродаж, НедельныйОбъемПродаж,
@@ -156,11 +166,12 @@ and [Описание_состояния_стока_ГФ]='Оверсток от
         return self.df[['НоменклатураКод', 'Номенклатура', 'УчетнаяЦена', 'РекомендованнаяЦена']], self.df
     
     
-    def get_recommended_price(self, sku, toolow=False, toohigh=False, dopobjem=0, artfruit=False, heatseal=False, superpereborka=False):
+    def get_recommended_price(self, sku, start, toolow=False, toohigh=False, dopobjem=0, artfruit=False, 
+                              heatseal=False, superpereborka=False, novinka=False):
         return calculate_price(self.df, self.no_competitors, self.deficit, self.pickup, self.trades_type, 
                                sku=sku, toolow=toolow, toohigh=toohigh, dopobjem=dopobjem, artfruit=artfruit, 
-                               heatseal=heatseal, superpereborka=superpereborka, toolowvalue=self.toolowvalue,
-                               toohighvalue=self.toohighvalue)[['НоменклатураКод', 'Номенклатура',
+                               heatseal=heatseal, superpereborka=superpereborka, novinka=novinka, start=start,
+                               toolowvalue=self.toolowvalue, toohighvalue=self.toohighvalue)[['НоменклатураКод', 'Номенклатура',
                                                                 'УчетнаяЦена', 'РекомендованнаяЦена']]
     
      
@@ -168,4 +179,4 @@ if __name__ == '__main__':
     mf = MainForm(10763, '2020-04-21', '2020-04-26')
     mf.get_data()
     result, df = mf.get_recommended_prices(no_competitors=False, pickup=True)
-    mf.get_recommended_price(7354, dopobjem=6, toolow=True)
+    mf.get_recommended_price(13111, '2020-04-21', dopobjem=6, toolow=False, novinka=True)
