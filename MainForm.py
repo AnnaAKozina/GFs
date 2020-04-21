@@ -53,7 +53,6 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
         if toohigh:
             df['ИзменениеЦены'] = toohighvalue
             
-        
             
     if not no_competitors:
         #Первая группа наценок
@@ -68,7 +67,12 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
         if novinka:
             if df['НовинкаС'].iloc[0] <= pd.to_datetime(start):
                 df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['НовинкаНаценка']
-
+                
+        if heatseal:
+            df['РекомендованнаяЦена'] += df['HeatSeal']
+        if superpereborka:
+            df['РекомендованнаяЦена'] += df['Суперпереборка']
+        
         #Вторая группа наценок - применяются к Новой Цене (после фиксированной наценки за логистику и упаковку)
         df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['Экспедирование']
         df['РекомендованнаяЦена'] = df['РекомендованнаяЦена'] * df['Штраф']
@@ -99,10 +103,11 @@ def calculate_price(df, no_competitors=False, deficit=False, pickup=False, trade
 
 
 class MainForm:
-    def __init__(self, client, start, finish):
+    def __init__(self, client, start, finish, region='Центральный'):
         self.client = client
         self.start = start
         self.finish = finish
+        self.region = region
         self.df = pd.DataFrame()
         self.toolowvalue = pd.read_sql("""select [Изменение_рекомендованной_цены_продажи] 
 from skidki_overstok
@@ -128,7 +133,8 @@ and [Описание_состояния_стока_ГФ]='Оверсток от
         group by s.НоменклатураКод, s.Номенклатура""", con=engine_to)
         
         cs_filter = f"""cs. Статус=1 and cs.КонтрагентКод={self.client} and
-        cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}"""
+        cs.НоменклатураКод in {tuple(sku_df['НоменклатураКод'])}
+        and l.РегионДоставки='{self.region}'"""
         
         self.df = pd.read_sql(f"""select 
         s.ЦеноваяГруппаКод,
@@ -140,15 +146,18 @@ and [Описание_состояния_стока_ГФ]='Оверсток от
         (1 + s.БрендНаценка) БрендНаценка,
         (1 + p.Рентабельность) Рентабельность,
         НедельнаяСуммаПродаж, НедельныйОбъемПродаж,
-        c.[ЗатратыЛогистика, руб/кг] * s.ЕдиницаХраненияОстатковВес ЗатратыЛогистика,
+        l.[ЗатратыЛогистика,_руб/кг] * s.ЕдиницаХраненияОстатковВес ЗатратыЛогистика,
         s.ЕдиницаХраненияОстатковВес,
         s.ЗатратыСклад,
         1.05 * cs.ЦенаТекущихТорговЗаКг * s.ЕдиницаХраненияОстатковВес ЦенаТекущихТоргов,
         (1 + (({1 - VAT}) * c.Бонус + c.Премия) * c.Бонус_W) Бонус,
         (1 + c.Штраф) Штраф,
         dov.СостояниеСтокаГФ, dov.Ситуация_на_рынке, dov.ИзменениеЦены,
-        c.СкидкаПриОверстоке
+        c.СкидкаПриОверстоке,
+        s.HeatSeal,
+        s.Суперпереборка
         from ClientSKU cs 
+        join Logistics l on l.КонтрагентКод=cs.КонтрагентКод
         join Clients c on c.КонтрагентКод=cs.КонтрагентКод
         left join SKU s on s.НоменклатураКод=cs.НоменклатураКод
         left join DeficitOverstock dov on dov.ЦеноваяГруппаКод=s.ЦеноваяГруппаКод
@@ -182,7 +191,7 @@ and [Описание_состояния_стока_ГФ]='Оверсток от
     
      
 if __name__ == '__main__':
-    mf = MainForm(10763, '2020-04-21', '2020-04-26')
+    mf = MainForm(10763, '2020-04-24', '2020-04-26')
     mf.get_data()
     result, df = mf.get_recommended_prices(no_competitors=False, pickup=True)
-    mf.get_recommended_price(13111, '2020-04-21', dopobjem=6, toolow=False, novinka=True)
+    mf.get_recommended_price(13111, '2020-04-24', dopobjem=6, toolow=False, novinka=True)
